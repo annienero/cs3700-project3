@@ -22,7 +22,7 @@ UDP_PORT = int(IP_PORT[IP_PORT.find(":")+1:])
 dest = (UDP_IP, UDP_PORT)
 
 # Set up the socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
 def log(string):
