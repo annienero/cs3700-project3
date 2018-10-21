@@ -25,21 +25,30 @@ dest = (UDP_IP, UDP_PORT)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
+#setup bookkeeping
+inFlightCount = 0
+packetsInFlight = {}
+
 def log(string):
   sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
 
 def send_next_packet():
   global SEQUENCE
+  global inFlightCount
+  global packetsInFlight
 
   data = sys.stdin.read(DATA_SIZE)
   if (len(data) > 0):
-    msg = json.dumps({"sequence": SEQUENCE, "data": data, "ack": False, "eof": False})
+    msgObj = {"sequence": SEQUENCE, "data": data, "ack": False, "eof": False}
+    msg = json.dumps(msgObj)
     SEQUENCE += len(data)
 
     if sock.sendto(msg, dest) < len(msg):
       log("[error] unable to fully send packet")
     else:
       log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
+      packetsInFlight[msgObj['sequence']] = (msg, time.time()) #pretty sure this give the current time
+      inFlightCount += 1
     return True
   else:
     return False
@@ -48,6 +57,51 @@ def send_next_packet():
 send_next_packet()
 
 # Now read in data, send packets
+# Notes:
+# So we can make our sliding window the whole megabyte
+# calculating the RTO is the hard part, since we don't know what the delay param is set to
+# maybe we just optimize for speed or data, not both
+# so we just set the RTO to a low number, we can make it dynamic later if we feel
+# So we send out our MB of data -> wait for acks, up to RTO time, then retransmit
+# hmm so unsure how bandwidth interacts with a big sliding window,
+# do we need to manually throttle how much data we send or will the network do that for us?
+# or do we lose data if we try to send more than the bandwidth can handle?
+# do I implement 3dup acks rule, where I retransmit if I see 3 acks in a row past my unacked?
+# ----------- PSEUDOCODE IDEAS
+# while True:
+#     if numInFlight < SLIDING_WINDOW:
+#         send next packet;
+#         add copy of sent packet to our packetsInFlight map (sequence number -> (packet, timeSent))
+#         numInFlight++;
+#     do a non-blocking receive (maybe set timeout to .001 or something)
+#     if it gives us something:
+#         is it an ack? -> mark that packet ACK'ed in our map (maybe just remove the entry?)
+#         numInFlight--;
+#     for every entry in packetsInFlight map:
+#         if it's been RTO since timeSent, retransmit, update timeSent in map
+
+#helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
+def listenForAck():
+  global packetsInFlight
+  global inFlightCount
+  result = sock.recvfrom(MSG_SIZE) #TODO: make this read non-blocking
+  if result:
+    (data, addr) = result
+    try:
+      decoded = json.loads(data)
+      if decoded['ack']: #if it's an ack
+        log("[recv ack] " + str(SEQUENCE))
+        #remove the entry for his ACK's sequence number in packetsInFlight
+        temp = packetsInFlight.pop(decoded['ack'], None)
+        if not temp:
+          log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
+        else:
+          inFlightCount -= 1
+    except (ValueError, KeyError, TypeError):
+      log("[recv corrupt packet]")
+
+# --------------------
+
 while True:
   log("ABOUT TO SLEEP")
   result = sock.recvfrom(MSG_SIZE)
@@ -57,7 +111,7 @@ while True:
     try:
       decoded = json.loads(data)
 
-      # If there is an ack, send next packet
+      # If there is an ack with the proper sequence number, send next packet
       if decoded['ack'] == SEQUENCE:
         log("[recv ack] " + str(SEQUENCE))
 
@@ -67,6 +121,7 @@ while True:
     except (ValueError, KeyError, TypeError):
       log("[recv corrupt packet]")
   else:
+    # we have timed out waiting for packet, should probably retransmit
     log("[error] timeout")
     sys.exit(-1)
 
