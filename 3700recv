@@ -66,7 +66,7 @@ while True:
         if decoded['sequence'] == curSeq:
             curSeq += len(decoded['data'])
             packets.append(decoded['data'])
-            while packetMap.hasKey(curSeq):
+            while packetMap.has_key(curSeq):
                 oldSeq = curSeq
                 curSeq += len(packetMap[oldSeq]['data'])
                 packets.append(packetMap[oldSeq]['data'])
