@@ -14,7 +14,7 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
-RTO = 1
+RTO = 2
 SLIDING_WINDOW = 100
 
 # Bind to localhost and an ephemeral port
@@ -87,6 +87,7 @@ def maybeRetransmit():
   global packetsInFlight
   for key in packetsInFlight:
     value = packetsInFlight[key]
+    msg = value[0] #fir value of tuple is the raw message string to send, complete with headers and data
     timeSent = value[1] #second value of tuple is time sent. Time is the number of seconds past the epoch
     timeElapsed = time.time() - timeSent
     if timeElapsed >= RTO:
@@ -95,14 +96,15 @@ def maybeRetransmit():
         log("[error] unable to fully send packet")
       else:
         log("[retransmit packet] " + msg)
-        packetsInFlight[key][1] = time.time()
+        packetsInFlight[key] = (msg, time.time())
 
 #helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
 def listenForAck():
   global packetsInFlight
   global inFlightCount
-  result = sock.recvfrom(MSG_SIZE) #TODO: make this read non-blocking
-  if result:
+  readable, writeable, exceptional = select.select([sock], [], [], 0) #writeable and exceptional are not used
+  if len(readable) > 0: #if the socket is readable, read it
+    result = sock.recvfrom(MSG_SIZE)
     (data, addr) = result
     try:
       decoded = json.loads(data)
@@ -119,14 +121,15 @@ def listenForAck():
 
 # --------------------
 
-#while False:
-  #listenForAck() #check for acks and process any we find
-  #if numInFlight < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
-    #if (not send_next_packet()):
-      #break
-  #maybeRetransmit() #retransmit any packets that have timed out
-
 while True:
+  listenForAck() #check for acks and process any we find
+  if inFlightCount < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
+    if (not send_next_packet()):
+      break
+  maybeRetransmit() #retransmit any packets that have timed out
+
+# THIS IS THE STARTER CODE CORE LOOP --  IT DOES NOT RUN ANYMORE BUT ITS HERE TO REFERENCE
+while False: #cheap way of commenting this stuff out. This used to while True.
   log("ABOUT TO SLEEP")
   result = sock.recvfrom(MSG_SIZE)
 
