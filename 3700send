@@ -14,6 +14,8 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
+RTO = 1
+SLIDING_WINDOW = 100
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -80,6 +82,21 @@ send_next_packet()
 #     for every entry in packetsInFlight map:
 #         if it's been RTO since timeSent, retransmit, update timeSent in map
 
+#helper that retransmits any packets that have timed out (were sent RTO or more seconds ago)
+def maybeRetransmit():
+  global packetsInFlight
+  for key in packetsInFlight:
+    value = packetsInFlight[key]
+    timeSent = value[1] #second value of tuple is time sent. Time is the number of seconds past the epoch
+    timeElapsed = time.time() - timeSent
+    if timeElapsed >= RTO:
+      #retransmiit and update the time sent
+      if sock.sendto(msg, dest) < len(msg):
+        log("[error] unable to fully send packet")
+      else:
+        log("[retransmit packet] " + msg)
+        packetsInFlight[key][1] = time.time()
+
 #helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
 def listenForAck():
   global packetsInFlight
@@ -101,6 +118,13 @@ def listenForAck():
       log("[recv corrupt packet]")
 
 # --------------------
+
+#while False:
+  #listenForAck() #check for acks and process any we find
+  #if numInFlight < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
+    #if (not send_next_packet()):
+      #break
+  #maybeRetransmit() #retransmit any packets that have timed out
 
 while True:
   log("ABOUT TO SLEEP")
