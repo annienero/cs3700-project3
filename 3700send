@@ -156,5 +156,16 @@ while False: #cheap way of commenting this stuff out. This used to while True.
     log("[error] timeout")
     sys.exit(-1)
 
-sock.sendto(json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}), dest)
+finalMsgObj = {"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}
+finalMsg = json.dumps(finalMsgObj)
+sock.sendto(finalMsg, dest)
+packetsInFlight[SEQUENCE] = (finalMsg, time.time())
+
+
+while True:
+  listenForAck()
+  maybeRetransmit()
+  if not packetsInFlight: #if we're no longer waiting for the ack on our eof
+    break
+  
 sys.exit(0)
