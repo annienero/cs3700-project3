@@ -87,7 +87,7 @@ def maybeRetransmit():
   global packetsInFlight
   for key in packetsInFlight:
     value = packetsInFlight[key]
-    msg = value[0] #fir value of tuple is the raw message string to send, complete with headers and data
+    msg = value[0] #first value of tuple is the raw message string to send, complete with headers and data
     timeSent = value[1] #second value of tuple is time sent. Time is the number of seconds past the epoch
     timeElapsed = time.time() - timeSent
     if timeElapsed >= RTO:
@@ -112,8 +112,8 @@ def listenForAck():
       decoded = json.loads(data)
       if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
         log("[recv ack] " + str(decoded['ack']))
-        #log("length of the data being acked: " + str(len(packetsInFlight[decoded['ack']][0]['data'])))
-        if True:#len(packetsInFlight[decoded['ack']][0]['data']) == decoded['length']:
+        log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
+        if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
           #remove the entry for his ACK's sequence number in packetsInFlight
 	  temp = packetsInFlight.pop(decoded['ack'], None)
           if not temp:
