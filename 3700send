@@ -104,6 +104,7 @@ def listenForAck():
   global inFlightCount
   readable, writeable, exceptional = select.select([sock], [], [], 0) #writeable and exceptional are not used
   if len(readable) > 0: #if the socket is readable, read it
+    log("\n\n\n\n\n\n socket is readable \n\n\n\n\n\n")
     result = sock.recvfrom(MSG_SIZE)
     (data, addr) = result
     try:
