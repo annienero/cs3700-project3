@@ -158,14 +158,17 @@ while False: #cheap way of commenting this stuff out. This used to while True.
 
 finalMsgObj = {"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}
 finalMsg = json.dumps(finalMsgObj)
-sock.sendto(finalMsg, dest)
-packetsInFlight[SEQUENCE] = (finalMsg, time.time())
 
+for i in range(0, 32):
+  sock.sendto(finalMsg, dest)
 
-while True:
-  listenForAck()
-  maybeRetransmit()
-  if not packetsInFlight: #if we're no longer waiting for the ack on our eof
-    break
+#while True:
+  #listenForAck()
+  #maybeRetransmit()
+  # if the socket is closed
+  #try:
+    #r, w, e = select.select([sock], [sock], [], .1)
+  #if not packetsInFlight: #if we're no longer waiting for the ack on our eof
+    #break
   
 sys.exit(0)
