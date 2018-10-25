@@ -14,7 +14,7 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
-RTO = 10
+RTO = 3
 SLIDING_WINDOW = 100
 
 # Bind to localhost and an ephemeral port
@@ -49,7 +49,7 @@ def send_next_packet():
       log("[error] unable to fully send packet")
     else:
       log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
-      packetsInFlight[msgObj['sequence']] = (msgObj, time.time()) #pretty sure this give the current time
+      packetsInFlight[msgObj['sequence']] = (msg, time.time()) #pretty sure this give the current time
       inFlightCount += 1
     return True
   else:
@@ -87,7 +87,7 @@ def maybeRetransmit():
   global packetsInFlight
   for key in packetsInFlight:
     value = packetsInFlight[key]
-    msg = json.dumps(value[0]) #fir value of tuple is the raw message string to send, complete with headers and data
+    msg = value[0] #fir value of tuple is the raw message string to send, complete with headers and data
     timeSent = value[1] #second value of tuple is time sent. Time is the number of seconds past the epoch
     timeElapsed = time.time() - timeSent
     if timeElapsed >= RTO:
@@ -112,8 +112,8 @@ def listenForAck():
       decoded = json.loads(data)
       if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
         log("[recv ack] " + str(decoded['ack']))
-        log("length of the data being acked: " + str(len(packetsInFlight[decoded['ack']][0]['data'])))
-        if len(packetsInFlight[decoded['ack']][0]['data']) == decoded['length']:
+        #log("length of the data being acked: " + str(len(packetsInFlight[decoded['ack']][0]['data'])))
+        if True:#len(packetsInFlight[decoded['ack']][0]['data']) == decoded['length']:
           #remove the entry for his ACK's sequence number in packetsInFlight
 	  temp = packetsInFlight.pop(decoded['ack'], None)
           if not temp:
