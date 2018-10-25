@@ -77,7 +77,7 @@ while True:
             packetMap[decoded['sequence']] = decoded
 
       # Send back an ack to the sender
-      msg = json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
+      msg = json.dumps({"ack": decoded['sequence'], "length": len(decoded['data'])}) # TODO maybe delete length
       log("ABOUT TO SEND " + msg)
       if sock.sendto(msg, addr) < len(msg):
         log("[error] unable to fully send packet")

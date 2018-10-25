@@ -104,29 +104,29 @@ def listenForAck():
   global inFlightCount
   readable, writeable, exceptional = select.select([sock], [], [], 0) #writeable and exceptional are not used
   if len(readable) > 0: #if the socket is readable, read it
-    log("\n\n\n\n\n\n socket is readable \n\n\n\n\n\n")
     result = sock.recvfrom(MSG_SIZE)
     (data, addr) = result
+    log("data is" + data)
     try:
       decoded = json.loads(data)
-      if decoded['ack']: #if it's an ack
-        log("[recv ack] " + str(SEQUENCE))
+      if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
+        log("[recv ack] " + str(decoded['ack']))
         #remove the entry for his ACK's sequence number in packetsInFlight
-        temp = packetsInFlight.pop(decoded['ack'], None)
+	temp = packetsInFlight.pop(decoded['ack'], None)
         if not temp:
-          log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
+	  log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
         else:
           inFlightCount -= 1
     except (ValueError, KeyError, TypeError):
       log("[recv corrupt packet]")
-
 # --------------------
 
 while True:
   listenForAck() #check for acks and process any we find
   if inFlightCount < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
-    if (not send_next_packet()):
-      break
+    if (not send_next_packet()) and (not bool(packetsInFlight)):
+        log("we think we're done sending and receiving acks")
+	break
   maybeRetransmit() #retransmit any packets that have timed out
 
 # THIS IS THE STARTER CODE CORE LOOP --  IT DOES NOT RUN ANYMORE BUT ITS HERE TO REFERENCE
