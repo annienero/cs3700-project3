@@ -99,6 +99,20 @@ def maybeRetransmit():
         log("[retransmit packet] " + msg)
         packetsInFlight[key] = (msg, time.time())
 
+#takes a sequence number and retransmits all unacked packets before it
+def fastRetransmit(seqNumber):
+  global packetsInFlight
+  curSeq = seqNumber
+  while packetsInFlight.has_key(curSeq):
+    #retrnsmit that packet
+    msg = packetsInFlight[curSeq][0]
+    if sock.sendto(msg, dest) < len(msg):
+      log("[error] unable to fully send packet")
+    else:
+      log("[retransmit packet] " + msg)
+      packetsInFlight[key] = (msg, time.time())
+    curSeq -= DATA_SIZE
+
 #helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
 def listenForAck():
   global packetsInFlight
@@ -120,6 +134,7 @@ def listenForAck():
 	    log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
           else:
             inFlightCount -= 1
+          fastRetransmit(decoded['ack'])
     except (ValueError, KeyError, TypeError):
       log("[recv corrupt packet]")
 # --------------------
@@ -162,13 +177,4 @@ finalMsg = json.dumps(finalMsgObj)
 for i in range(0, 32):
   sock.sendto(finalMsg, dest)
 
-#while True:
-  #listenForAck()
-  #maybeRetransmit()
-  # if the socket is closed
-  #try:
-    #r, w, e = select.select([sock], [sock], [], .1)
-  #if not packetsInFlight: #if we're no longer waiting for the ack on our eof
-    #break
-  
 sys.exit(0)
