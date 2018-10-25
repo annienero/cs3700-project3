@@ -15,7 +15,7 @@ DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
 RTO = 5
-SLIDING_WINDOW = 100
+SLIDING_WINDOW = 400
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -30,6 +30,7 @@ sock.settimeout(TIMEOUT)
 #setup bookkeeping
 inFlightCount = 0
 packetsInFlight = {}
+RttSamples = []
 
 def log(string):
   sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
@@ -79,22 +80,31 @@ def maybeRetransmit():
 def fastRetransmit(seqNumber):
   global packetsInFlight
   curSeq = seqNumber
-  while curSeq >= 0:
-    if packetsInFlight.has_key(curSeq):
-      #retrnsmit that packet
-      msg = packetsInFlight[curSeq][0]
-      if sock.sendto(msg, dest) < len(msg):
-        log("[error] unable to fully send packet")
-      else:
-        log("[fast retransmit packet] " + msg)
-        packetsInFlight[curSeq] = (msg, time.time(), True)
+  while packetsInFlight.has_key(curSeq):
+    #retrnsmit that packet
+    msg = packetsInFlight[curSeq][0]
+    if sock.sendto(msg, dest) < len(msg):
+      log("[error] unable to fully send packet")
+    else:
+      log("[fast retransmit packet] " + msg)
+      packetsInFlight[curSeq] = (msg, time.time(), True)
     curSeq -= DATA_SIZE
+
+#updates rttsamples and rto with a new sample of round trip time
+def updateRTO(rttSample):
+  global RttSamples
+  global RTO
+  RttSamples += rttSample
+  sampleSum = 0
+  for sample in RttSamples:
+    sampleSum += sample
+  RTO = 2*(sampleSum/len(RttSamples))
+  log("updated RTO to be: " + str(RTO) + ", new sample was: " + str(rttSample))
 
 #helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
 def listenForAck():
   global packetsInFlight
   global inFlightCount
-  global RTO
   readable, writeable, exceptional = select.select([sock], [], [], 0) #writeable and exceptional are not used
   if len(readable) > 0: #if the socket is readable, read it
     result = sock.recvfrom(MSG_SIZE)
@@ -106,21 +116,21 @@ def listenForAck():
         log("[recv ack] " + str(decoded['ack']))
         log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
         if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
-          #update RTO with this new information
-          targetEntry = packetsInFlight[decoded['ack']]
-          timeSent = targetEntry[1]
-          wasRetransmitted = targetEntry[2]
-          if not wasRetransmitted:
-            timeTaken = time.time() - timeSent
-            RTO = timeTaken * 2
-          
+          #retransmit any unacked packets we can find with ower sequence numbers
+          fastRetransmit(decoded['ack'])
           #remove the entry for his ACK's sequence number in packetsInFlight
 	  temp = packetsInFlight.pop(decoded['ack'], None)
           if not temp:
 	    log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
           else:
             inFlightCount -= 1
-          fastRetransmit(decoded['ack'])
+            #update RTO with this new information
+            targetEntry = packetsInFlight[decoded['ack']]
+            timeSent = targetEntry[1]
+            wasRetransmitted = targetEntry[2]
+            if not wasRetransmitted:
+              timeTaken = time.time() - timeSent
+              updateRTO(timeTaken)
     except (ValueError, KeyError, TypeError):
       log("[recv corrupt packet]")
 # --------------------
