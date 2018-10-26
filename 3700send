@@ -14,8 +14,8 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
-RTO = 5
-SLIDING_WINDOW = 400
+RTO = 1
+SLIDING_WINDOW = 200
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -73,7 +73,7 @@ def maybeRetransmit():
       if sock.sendto(msg, dest) < len(msg):
         log("[error] unable to fully send packet")
       else:
-        log("[retransmit packet] " + msg)
+        log("[retransmit packet] " + str(key))
         packetsInFlight[key] = (msg, time.time(), True)
 
 #takes a sequence number and retransmits all unacked packets before it
@@ -114,7 +114,7 @@ def listenForAck():
       decoded = json.loads(data)
       if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
         log("[recv ack] " + str(decoded['ack']))
-        log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
+        #log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
         if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
           #retransmit any unacked packets we can find with ower sequence numbers
           fastRetransmit(decoded['ack'])
