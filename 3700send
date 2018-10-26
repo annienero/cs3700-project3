@@ -14,7 +14,7 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
-RTO = 1
+RTO = .5
 SLIDING_WINDOW = 200
 
 # Bind to localhost and an ephemeral port
