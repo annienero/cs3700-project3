@@ -1,7 +1,4 @@
 #!/usr/bin/python -u
-#
-# Project 2 Starter Code
-#
 
 import sys
 import socket
@@ -69,10 +66,8 @@ def scaleRTO():
   #scale up exponentially at first, but after a threshold, stop
   if RTO < RTO_THRESHOLD:
     RTO *= RTO_EXPONENTIAL_SCALING
-    log(" ------------------- SCALED EXPONENTIALLYYYY -----")
   else:
     RTO += RTO_LINEAR_SCALING
-    log(" --------||||||| ----- SCALED LINEARLY --]]]")
 
 #helper that retransmits any packets that have timed out (were sent RTO or more seconds ago)
 def maybeRetransmit():
@@ -102,16 +97,12 @@ def maybeRetransmit():
 #takes a sequence number and retransmits all unacked packets before it
 def fastRetransmit(seqNumber):
   global packetsInFlight
-  log(" --------- beginning of FAST RETRANSMIT ----")
   shouldRetransmit = (not packetsInFlight.has_key(seqNumber - DATA_SIZE)) and (not packetsInFlight.has_key(seqNumber - 2*DATA_SIZE))
-  log("------ SHOULD RETRANSMIT = " + str(shouldRetransmit))
   if shouldRetransmit:
     curSeq = seqNumber - 3*DATA_SIZE #start trying to retransmit at the packet directly before this
-    log(" --------- RESOLVE curSEq in FRT-------")
     while packetsInFlight.has_key(curSeq):
       #retrnsmit that packet
       msg = packetsInFlight[curSeq][0]
-      log("------------- RIGHT BEFORE IF ELSE IN FRT ---")
       if sock.sendto(msg, dest) < len(msg):
         log("[error] unable to fully send packet")
       else:
@@ -137,12 +128,10 @@ def listenForAck():
   if len(readable) > 0: #if the socket is readable, read it
     result = sock.recvfrom(MSG_SIZE)
     (data, addr) = result
-    log("data is" + data)
     try:
       decoded = json.loads(data)
       if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
         log("[recv ack] " + str(decoded['ack']))
-        #log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
         if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
           #remove the entry for his ACK's sequence number in packetsInFlight
 	  targetEntry = packetsInFlight.pop(decoded['ack'], None)
@@ -151,26 +140,20 @@ def listenForAck():
           else:
             inFlightCount -= 1
             #retransmit any unacked packets we can find with lower sequence numbers
-            log(" ---------- BEFORE FAST RETRANSMIT")
             fastRetransmit(decoded['ack'])
-            log(" ------- AFTER FAST RETRANSMIT -----")
             #update RTO with this new information
             timeSent = targetEntry[1]
             wasRetransmitted = targetEntry[2]
             if not wasRetransmitted:
               timeTaken = time.time() - timeSent
-              log(" ----- RIGHT BEFORE UDPATE RTO")
               updateRTO(timeTaken)
-              log(" -------- AFTER UPDATE RTO")
     except (ValueError, KeyError, TypeError):
-      log("------------------ [recv corrupt packet] --------------------")
-# --------------------
+      log("[recv corrupt packet]")
 
 while True:
   listenForAck() #check for acks and process any we find
   if inFlightCount < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
     if (not send_next_packet()) and (not bool(packetsInFlight)):
-        log("we think we're done sending and receiving acks")
 	break
   maybeRetransmit() #retransmit any packets that have timed out
 
