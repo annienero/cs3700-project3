@@ -15,7 +15,9 @@ DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
 RTO = .2
-RTO_SCALING = .1
+RTO_LINEAR_SCALING = .1
+RTO_EXPONENTIAL_SCALING = 1.075
+RTO_THRESHOLD = 6
 RTO_MULTIPLIER = 1.25
 SLIDING_WINDOW = 200
 
@@ -61,6 +63,17 @@ def send_next_packet():
 # Send first packet
 send_next_packet()
 
+# increment RTO according to a scaling function
+def scaleRTO():
+  global RTO
+  #scale up exponentially at first, but after a threshold, stop
+  if RTO < RTO_THRESHOLD:
+    RTO *= RTO_EXPONENTIAL_SCALING
+    log(" ------------------- SCALED EXPONENTIALLYYYY -----")
+  else:
+    RTO += RTO_LINEAR_SCALING
+    log(" --------||||||| ----- SCALED LINEARLY --]]]")
+
 #helper that retransmits any packets that have timed out (were sent RTO or more seconds ago)
 def maybeRetransmit():
   global packetsInFlight
@@ -76,7 +89,7 @@ def maybeRetransmit():
       #reach a point where the timeout is long enough that we can successfully send a packet.
       #Note that this incrementing will get overwritten by a call to updateRTO() which sets RTO directly
       #this is intended
-      RTO += RTO_SCALING
+      scaleRTO()
       log("RETRANSMITTING: now RTO is: " + str(RTO))
       #retransmiit and update the time sent
       log("timeElapsed = " + str(timeElapsed))
