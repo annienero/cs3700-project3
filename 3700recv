@@ -60,8 +60,6 @@ while True:
 
       # If there is data, we accept it and print it out
       if (decoded['data']):
-        # If we receive data, we assume it's in-order
-        # You will need to do much more here
         log("[recv data] " + str(decoded['sequence']) + " (" + str(len(decoded['data'])) + ") ACCEPTED (in-order)")
         if decoded['sequence'] == curSeq:
             curSeq += len(decoded['data'])
@@ -77,7 +75,7 @@ while True:
             packetMap[decoded['sequence']] = decoded
 
       # Send back an ack to the sender
-      msg = json.dumps({"ack": decoded['sequence'], "length": len(decoded['data'])}) # TODO maybe delete length
+      msg = json.dumps({"ack": decoded['sequence'], "length": len(decoded['data'])})
       log("ABOUT TO SEND " + msg)
       if sock.sendto(msg, addr) < len(msg):
         log("[error] unable to fully send packet")
@@ -88,7 +86,3 @@ while True:
   else:
     log("[error] timeout")
     sys.exit(-1)
-
-def orderData(data):
-    # TODO
-    return
