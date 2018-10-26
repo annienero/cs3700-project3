@@ -15,6 +15,8 @@ DATA_SIZE = 1000
 TIMEOUT = 30
 SEQUENCE = 0
 RTO = .5
+RTO_SCALING = .1
+RTO_MULTIPLIER = 1.25
 SLIDING_WINDOW = 200
 
 # Bind to localhost and an ephemeral port
@@ -74,7 +76,7 @@ def maybeRetransmit():
       #reach a point where the timeout is long enough that we can successfully send a packet.
       #Note that this incrementing will get overwritten by a call to updateRTO() which sets RTO directly
       #this is intended
-      RTO += 0.1
+      RTO += RTO_SCALING
       log("RETRANSMITTING: now RTO is: " + str(RTO))
       #retransmiit and update the time sent
       log("timeElapsed = " + str(timeElapsed))
@@ -82,32 +84,37 @@ def maybeRetransmit():
         log("[error] unable to fully send packet")
       else:
         log("[retransmit packet] " + str(key))
-        packetsInFlight[key] = (msg, time.time(), True)
+        packetsInFlight[key] = (msg, time.time(), False)
 
 #takes a sequence number and retransmits all unacked packets before it
 def fastRetransmit(seqNumber):
   global packetsInFlight
-  curSeq = seqNumber - DATA_SIZE #start trying to retransmit at the packet directly before this
-  while packetsInFlight.has_key(curSeq):
-    #retrnsmit that packet
-    msg = packetsInFlight[curSeq][0]
-    if sock.sendto(msg, dest) < len(msg):
-      log("[error] unable to fully send packet")
-    else:
-      log("[fast retransmit packet] " + curSeq)
-      packetsInFlight[curSeq] = (msg, time.time(), True)
-    curSeq -= DATA_SIZE
+  log(" --------- beginning of FAST RETRANSMIT ----")
+  shouldRetransmit = (not packetsInFlight.has_key(seqNumber - DATA_SIZE)) and (not packetsInFlight.has_key(seqNumber - 2*DATA_SIZE))
+  log("------ SHOULD RETRANSMIT = " + str(shouldRetransmit))
+  if shouldRetransmit:
+    curSeq = seqNumber - 3*DATA_SIZE #start trying to retransmit at the packet directly before this
+    log(" --------- RESOLVE curSEq in FRT-------")
+    while packetsInFlight.has_key(curSeq):
+      #retrnsmit that packet
+      msg = packetsInFlight[curSeq][0]
+      log("------------- RIGHT BEFORE IF ELSE IN FRT ---")
+      if sock.sendto(msg, dest) < len(msg):
+        log("[error] unable to fully send packet")
+      else:
+        log("[fast retransmit packet] " + str(curSeq))
+        packetsInFlight[curSeq] = (msg, time.time(), True)
+      curSeq -= DATA_SIZE
 
 #updates rttsamples and rto with a new sample of round trip time
 def updateRTO(rttSample):
   global RttSamples
   global RTO
-  RttSamples += rttSample
+  RttSamples.append(rttSample)
   sampleSum = 0
   for sample in RttSamples:
     sampleSum += sample
-  RTO = 1.5*(sampleSum/len(RttSamples))
-  log("updated RTO to be: " + str(RTO) + ", new sample was: " + str(rttSample))
+  RTO = RTO_MULTIPLIER*(sampleSum/len(RttSamples))
 
 #helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
 def listenForAck():
@@ -125,22 +132,25 @@ def listenForAck():
         #log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
         if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
           #remove the entry for his ACK's sequence number in packetsInFlight
-	  temp = packetsInFlight.pop(decoded['ack'], None)
-          if not temp:
+	  targetEntry = packetsInFlight.pop(decoded['ack'], None)
+          if not targetEntry:
 	    log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
           else:
             inFlightCount -= 1
             #retransmit any unacked packets we can find with lower sequence numbers
+            log(" ---------- BEFORE FAST RETRANSMIT")
             fastRetransmit(decoded['ack'])
+            log(" ------- AFTER FAST RETRANSMIT -----")
             #update RTO with this new information
-            targetEntry = packetsInFlight[decoded['ack']]
             timeSent = targetEntry[1]
             wasRetransmitted = targetEntry[2]
             if not wasRetransmitted:
               timeTaken = time.time() - timeSent
+              log(" ----- RIGHT BEFORE UDPATE RTO")
               updateRTO(timeTaken)
+              log(" -------- AFTER UPDATE RTO")
     except (ValueError, KeyError, TypeError):
-      log("[recv corrupt packet]")
+      log("------------------ [recv corrupt packet] --------------------")
 # --------------------
 
 while True:
