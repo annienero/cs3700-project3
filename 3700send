@@ -102,7 +102,7 @@ def fastRetransmit(seqNumber):
 def updateRTO(rttSample):
   global RttSamples
   global RTO
-  RttSamples += rttSample
+  RttSamples.append(rttSample)
   sampleSum = 0
   for sample in RttSamples:
     sampleSum += sample
@@ -125,16 +125,15 @@ def listenForAck():
         #log("length of the data being acked: " + str(len(json.loads(packetsInFlight[decoded['ack']][0])['data'])))
         if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
           #remove the entry for his ACK's sequence number in packetsInFlight
-	  temp = packetsInFlight.pop(decoded['ack'], None)
-          if not temp:
+	  targetEntry = packetsInFlight.pop(decoded['ack'], None)
+          if not targetEntry:
 	    log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
           else:
             inFlightCount -= 1
             #retransmit any unacked packets we can find with lower sequence numbers
             fastRetransmit(decoded['ack'])
             #update RTO with this new information
-            targetEntry = packetsInFlight[decoded['ack']]
-            timeSent = targetEntry[1]
+	    timeSent = targetEntry[1]
             wasRetransmitted = targetEntry[2]
             if not wasRetransmitted:
               timeTaken = time.time() - timeSent
