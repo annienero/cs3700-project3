@@ -1,0 +1,167 @@
+#!/usr/bin/python -u
+
+import sys
+import socket
+import time
+import datetime
+import select
+import json
+
+MSG_SIZE = 1500
+DATA_SIZE = 1000
+TIMEOUT = 30
+SEQUENCE = 0
+RTO = .2
+RTO_LINEAR_SCALING = .1
+RTO_EXPONENTIAL_SCALING = 1.075
+RTO_THRESHOLD = 6
+RTO_MULTIPLIER = 1.25
+SLIDING_WINDOW = 200
+
+# Bind to localhost and an ephemeral port
+IP_PORT = sys.argv[1]
+UDP_IP = IP_PORT[0:IP_PORT.find(":")]
+UDP_PORT = int(IP_PORT[IP_PORT.find(":")+1:])
+dest = (UDP_IP, UDP_PORT)
+
+# Set up the socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(TIMEOUT)
+
+#setup bookkeeping
+inFlightCount = 0
+packetsInFlight = {}
+RttSamples = []
+
+def log(string):
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
+
+def send_next_packet():
+  global SEQUENCE
+  global inFlightCount
+  global packetsInFlight
+
+  data = sys.stdin.read(DATA_SIZE)
+  if (len(data) > 0):
+    msgObj = {"sequence": SEQUENCE, "data": data, "eof": False}
+    msg = json.dumps(msgObj)
+    SEQUENCE += len(data)
+
+    if sock.sendto(msg, dest) < len(msg):
+      log("[error] unable to fully send packet")
+    else:
+      log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
+      packetsInFlight[msgObj['sequence']] = (msg, time.time(), False) #pretty sure this give the current time
+      inFlightCount += 1
+    return True
+  else:
+    return False
+
+# Send first packet
+send_next_packet()
+
+# increment RTO according to a scaling function
+def scaleRTO():
+  global RTO
+  #scale up exponentially at first, but after a threshold, stop
+  if RTO < RTO_THRESHOLD:
+    RTO *= RTO_EXPONENTIAL_SCALING
+  else:
+    RTO += RTO_LINEAR_SCALING
+
+#helper that retransmits any packets that have timed out (were sent RTO or more seconds ago)
+def maybeRetransmit():
+  global packetsInFlight
+  global RTO
+  for key in packetsInFlight:
+    value = packetsInFlight[key]
+    msg = value[0] #first value of tuple is the raw message string to send, complete with headers and data
+    timeSent = value[1] #second value of tuple is time sent. Time is the number of seconds past the epoch
+    timeElapsed = time.time() - timeSent
+    if timeElapsed >= RTO:
+      #every time we time out, also increment RTO by a little,
+      #in case we're on a high latency network, we will eventually
+      #reach a point where the timeout is long enough that we can successfully send a packet.
+      #Note that this incrementing will get overwritten by a call to updateRTO() which sets RTO directly
+      #this is intended
+      scaleRTO()
+      log("RETRANSMITTING: now RTO is: " + str(RTO))
+      #retransmiit and update the time sent
+      log("timeElapsed = " + str(timeElapsed))
+      if sock.sendto(msg, dest) < len(msg):
+        log("[error] unable to fully send packet")
+      else:
+        log("[retransmit packet] " + str(key))
+        packetsInFlight[key] = (msg, time.time(), False)
+
+#takes a sequence number and retransmits all unacked packets before it
+def fastRetransmit(seqNumber):
+  global packetsInFlight
+  shouldRetransmit = (not packetsInFlight.has_key(seqNumber - DATA_SIZE)) and (not packetsInFlight.has_key(seqNumber - 2*DATA_SIZE))
+  if shouldRetransmit:
+    curSeq = seqNumber - 3*DATA_SIZE #start trying to retransmit at the packet directly before this
+    while packetsInFlight.has_key(curSeq):
+      #retrnsmit that packet
+      msg = packetsInFlight[curSeq][0]
+      if sock.sendto(msg, dest) < len(msg):
+        log("[error] unable to fully send packet")
+      else:
+        log("[fast retransmit packet] " + str(curSeq))
+        packetsInFlight[curSeq] = (msg, time.time(), True)
+      curSeq -= DATA_SIZE
+
+#updates rttsamples and rto with a new sample of round trip time
+def updateRTO(rttSample):
+  global RttSamples
+  global RTO
+  RttSamples.append(rttSample)
+  sampleSum = 0
+  for sample in RttSamples:
+    sampleSum += sample
+  RTO = RTO_MULTIPLIER*(sampleSum/len(RttSamples))
+
+#helper that does a non-blocking receive, checks for ack, and modifies packetsInFlight as necessary
+def listenForAck():
+  global packetsInFlight
+  global inFlightCount
+  readable, writeable, exceptional = select.select([sock], [], [], 0) #writeable and exceptional are not used
+  if len(readable) > 0: #if the socket is readable, read it
+    result = sock.recvfrom(MSG_SIZE)
+    (data, addr) = result
+    try:
+      decoded = json.loads(data)
+      if decoded['ack'] == 0 or decoded['ack']: #if it's an ack
+        log("[recv ack] " + str(decoded['ack']))
+        if len(json.loads(packetsInFlight[decoded['ack']][0])['data']) == decoded['length']:
+          #remove the entry for his ACK's sequence number in packetsInFlight
+	  targetEntry = packetsInFlight.pop(decoded['ack'], None)
+          if not targetEntry:
+	    log("ERROR: Tried to remove an entry in packetsInFlight that does not exist")
+          else:
+            inFlightCount -= 1
+            #retransmit any unacked packets we can find with lower sequence numbers
+            fastRetransmit(decoded['ack'])
+            #update RTO with this new information
+            timeSent = targetEntry[1]
+            wasRetransmitted = targetEntry[2]
+            if not wasRetransmitted:
+              timeTaken = time.time() - timeSent
+              updateRTO(timeTaken)
+    except (ValueError, KeyError, TypeError):
+      log("[recv corrupt packet]")
+
+while True:
+  listenForAck() #check for acks and process any we find
+  if inFlightCount < SLIDING_WINDOW: #if we haven't filled the sliding window yet, send another packet
+    if (not send_next_packet()) and (not bool(packetsInFlight)):
+	break
+  maybeRetransmit() #retransmit any packets that have timed out
+
+
+finalMsgObj = {"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}
+finalMsg = json.dumps(finalMsgObj)
+
+for i in range(0, 10):
+  sock.sendto(finalMsg, dest)
+
+sys.exit(0)

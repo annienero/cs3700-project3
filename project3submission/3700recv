@@ -1,0 +1,88 @@
+#!/usr/bin/python -u
+#
+# Project 2 Starter Code
+#
+
+import sys
+import socket
+import time
+import datetime
+import select
+import json
+
+def log(string):
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
+
+MSG_SIZE = 1500
+TIMEOUT = 30
+
+# Bind to localhost and an ephemeral port
+UDP_IP = "127.0.0.1"
+UDP_PORT = 0
+
+# Set up the socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+sock.settimeout(TIMEOUT)
+
+# Get port we bound to
+UDP_PORT = sock.getsockname()[1]
+log("[bound] " + str(UDP_PORT))
+
+curSeq = 0
+packets = [] # list of ordered packets' data as string
+packetMap = {} # map packets we can't order yet
+
+def eof():
+    for p in packets:
+        sys.stdout.write(p)
+    log("[completed]")
+    sys.exit(0)
+
+# Now listen for packets
+while True:
+  result = sock.recvfrom(MSG_SIZE)
+
+  # If nothing is ready, we hit the timeout
+  if result:
+    (data, addr) = result
+
+    try:
+      decoded = json.loads(data)
+
+      # If the EOF flag is set, exit
+      if (decoded['eof']):
+        if decoded['sequence'] == curSeq:
+            eof()
+      else:
+        packetMap[decoded['sequence']] = decoded
+
+
+      # If there is data, we accept it and print it out
+      if (decoded['data']):
+        log("[recv data] " + str(decoded['sequence']) + " (" + str(len(decoded['data'])) + ") ACCEPTED (in-order)")
+        if decoded['sequence'] == curSeq:
+            curSeq += len(decoded['data'])
+            packets.append(decoded['data'])
+            while packetMap.has_key(curSeq):
+                oldSeq = curSeq
+                curSeq += len(packetMap[oldSeq]['data'])
+                packets.append(packetMap[oldSeq]['data'])
+                if packetMap[oldSeq]['eof']:
+                    eof()
+                packetMap.pop(oldSeq, None)
+        else:
+            packetMap[decoded['sequence']] = decoded
+
+      # Send back an ack to the sender
+      msg = json.dumps({"ack": decoded['sequence'], "length": len(decoded['data'])})
+      log("ABOUT TO SEND " + msg)
+      if sock.sendto(msg, addr) < len(msg):
+        log("[error] unable to fully send packet")
+
+    except (ValueError, KeyError, TypeError) as e:
+      log("[recv corrupt packet]")
+      raise e
+  else:
+    log("[error] timeout")
+    sys.exit(-1)
