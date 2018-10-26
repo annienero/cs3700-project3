@@ -159,9 +159,7 @@ def listenForAck():
             wasRetransmitted = targetEntry[2]
             if not wasRetransmitted:
               timeTaken = time.time() - timeSent
-              log(" ----- RIGHT BEFORE UDPATE RTO")
               updateRTO(timeTaken)
-              log(" -------- AFTER UPDATE RTO")
     except (ValueError, KeyError, TypeError):
       log("------------------ [recv corrupt packet] --------------------")
 # --------------------
